@@ -50,7 +50,8 @@ uv run python -m bsky2masto --actor your-handle.bsky.social --include-bridgy
 
 - `--verify` → verify extracted handles via WebFinger
 - `--max-follows N` → scan only first `N` follows
-- `--bridgy-pause-ms 150` → pause between Bridgy checks (default 150ms)
+- `--scan-workers 8` → parallel workers for verify/bridgy checks (queue-based)
+- `--bridgy-pause-ms 150` → per-check pause before Bridgy request (politeness throttle)
 - `--quiet` → suppress progress logging
 
 ## Import into Mastodon

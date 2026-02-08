@@ -45,6 +45,12 @@ def parse_args() -> argparse.Namespace:
         help="Pause between Bridgy checks to be polite (default: 150)",
     )
     p.add_argument(
+        "--scan-workers",
+        type=int,
+        default=8,
+        help="Parallel workers for verify/bridgy checks during scanning (default: 8)",
+    )
+    p.add_argument(
         "--quiet",
         action="store_true",
         help="Suppress progress logging",
@@ -63,6 +69,7 @@ def main() -> int:
             include_bridgy=args.include_bridgy,
             verify=args.verify,
             bridgy_pause_ms=args.bridgy_pause_ms,
+            scan_workers=args.scan_workers,
             verbose=verbose,
         )
     except HTTPError as e:

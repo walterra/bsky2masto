@@ -4,6 +4,7 @@ import csv
 import json
 import re
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from typing import Dict, Iterable, List, Optional, Set, Tuple
 from urllib.parse import urlencode
@@ -185,21 +186,105 @@ def write_matches_csv(path: str, matches: Iterable[Match]) -> None:
             )
 
 
+def _verify_candidates_parallel(
+    candidates: Set[str], workers: int, verbose: bool
+) -> Dict[str, bool]:
+    if not candidates:
+        return {}
+
+    worker_count = max(1, workers)
+    log(
+        f"  verifying {len(candidates)} unique discovered handles with {worker_count} workers...",
+        verbose,
+    )
+
+    results: Dict[str, bool] = {}
+    sorted_candidates = sorted(candidates)
+
+    with ThreadPoolExecutor(max_workers=worker_count) as pool:
+        future_to_candidate = {
+            pool.submit(verify_mastodon_handle, candidate): candidate
+            for candidate in sorted_candidates
+        }
+
+        total = len(future_to_candidate)
+        done = 0
+        for future in as_completed(future_to_candidate):
+            candidate = future_to_candidate[future]
+            try:
+                results[candidate] = bool(future.result())
+            except Exception:
+                results[candidate] = False
+
+            done += 1
+            if verbose and (done % 25 == 0 or done == total):
+                log(f"    verified {done}/{total}", verbose)
+
+    return results
+
+
+def _bridgy_lookup_worker(handle: str, pause_ms: int) -> bool:
+    if pause_ms > 0:
+        time.sleep(pause_ms / 1000.0)
+    return is_bridged_to_fediverse(handle)
+
+
+def _check_bridgy_parallel(
+    handles: List[str], workers: int, pause_ms: int, verbose: bool
+) -> Set[str]:
+    filtered_handles = [h for h in handles if h]
+    if not filtered_handles:
+        return set()
+
+    worker_count = max(1, workers)
+    log(
+        f"  checking Bridgy Fed opt-in for {len(filtered_handles)} follows "
+        f"with {worker_count} workers...",
+        verbose,
+    )
+
+    bridged: Set[str] = set()
+    with ThreadPoolExecutor(max_workers=worker_count) as pool:
+        future_to_handle = {
+            pool.submit(_bridgy_lookup_worker, handle, pause_ms): handle
+            for handle in filtered_handles
+        }
+
+        total = len(future_to_handle)
+        done = 0
+        for future in as_completed(future_to_handle):
+            handle = future_to_handle[future]
+            try:
+                if bool(future.result()):
+                    bridged.add(handle)
+            except Exception:
+                pass
+
+            done += 1
+            if verbose and (done % 50 == 0 or done == total):
+                log(f"    bridgy checked {done}/{total}", verbose)
+
+    return bridged
+
+
 def build_matches(
     actor: str,
     max_follows: Optional[int],
     include_bridgy: bool,
     verify: bool,
     bridgy_pause_ms: int,
+    scan_workers: int,
     verbose: bool,
 ) -> Tuple[List[Match], int]:
     follows = fetch_follows(actor=actor, max_follows=max_follows, verbose=verbose)
-    verify_cache: Dict[str, bool] = {}
-    matches: List[Match] = []
+    profile_rows: List[Tuple[str, str, List[Tuple[str, str]]]] = []
+    all_candidates: Set[str] = set()
+    all_handles: List[str] = []
 
     log(
         f"[2/3] Scanning {len(follows)} followed profiles "
-        f"(verify={'on' if verify else 'off'}, bridgy={'on' if include_bridgy else 'off'})...",
+        f"(verify={'on' if verify else 'off'}, bridgy={'on' if include_bridgy else 'off'}, "
+        f"workers={max(1, scan_workers)})...",
         verbose,
     )
 
@@ -211,16 +296,37 @@ def build_matches(
         log(f"  [{idx}/{len(follows)}] {bsky_handle}", verbose)
 
         seen_for_profile: Set[str] = set()
+        profile_candidates: List[Tuple[str, str]] = []
 
         for candidate, source in extract_candidates(description) + extract_candidates(display_name):
             if candidate in seen_for_profile:
                 continue
             seen_for_profile.add(candidate)
+            profile_candidates.append((candidate, source))
 
+        if verify:
+            for candidate, _ in profile_candidates:
+                all_candidates.add(candidate)
+
+        if include_bridgy and bsky_handle:
+            all_handles.append(bsky_handle)
+
+        profile_rows.append((bsky_handle, display_name, profile_candidates))
+
+    verify_results = (
+        _verify_candidates_parallel(all_candidates, scan_workers, verbose) if verify else {}
+    )
+    bridged_handles = (
+        _check_bridgy_parallel(all_handles, scan_workers, bridgy_pause_ms, verbose)
+        if include_bridgy
+        else set()
+    )
+
+    matches: List[Match] = []
+    for bsky_handle, display_name, profile_candidates in profile_rows:
+        for candidate, source in profile_candidates:
             if verify:
-                if candidate not in verify_cache:
-                    verify_cache[candidate] = verify_mastodon_handle(candidate)
-                verified = "yes" if verify_cache[candidate] else "no"
+                verified = "yes" if verify_results.get(candidate, False) else "no"
             else:
                 verified = "skipped"
 
@@ -234,19 +340,16 @@ def build_matches(
                 )
             )
 
-        if include_bridgy and bsky_handle:
-            if is_bridged_to_fediverse(bsky_handle):
-                bridgy_handle = f"{bsky_handle}@bsky.brid.gy"
-                matches.append(
-                    Match(
-                        bluesky_handle=bsky_handle,
-                        bluesky_display_name=display_name,
-                        mastodon_handle=bridgy_handle,
-                        source="bridgy_fed",
-                        verified="yes",
-                    )
+        if include_bridgy and bsky_handle in bridged_handles:
+            bridgy_handle = f"{bsky_handle}@bsky.brid.gy"
+            matches.append(
+                Match(
+                    bluesky_handle=bsky_handle,
+                    bluesky_display_name=display_name,
+                    mastodon_handle=bridgy_handle,
+                    source="bridgy_fed",
+                    verified="yes",
                 )
-            if bridgy_pause_ms > 0:
-                time.sleep(bridgy_pause_ms / 1000.0)
+            )
 
     return matches, len(follows)
