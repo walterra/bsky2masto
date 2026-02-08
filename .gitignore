@@ -1,0 +1,9 @@
+# Python
+__pycache__/
+*.pyc
+
+# Generated outputs (local/social graph data)
+*-mastodon-import.csv
+*-matches.csv
+mastodon-import.csv
+matches.csv
