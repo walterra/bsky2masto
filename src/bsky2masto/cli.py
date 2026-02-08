@@ -4,12 +4,19 @@ import argparse
 import sys
 from urllib.error import HTTPError, URLError
 
+from ._version import VERSION
 from .core import build_matches, log, write_mastodon_import_csv, write_matches_csv
 
 
-def parse_args() -> argparse.Namespace:
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p = argparse.ArgumentParser(
         description="Generate a Mastodon import CSV from Bluesky follows",
+    )
+    p.add_argument(
+        "--version",
+        action="version",
+        version=f"bsky2masto {VERSION}",
+        help="Show installed version and exit",
     )
     p.add_argument("--actor", required=True, help="Bluesky handle or DID")
     p.add_argument(
@@ -55,7 +62,7 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Suppress progress logging",
     )
-    return p.parse_args()
+    return p.parse_args(argv)
 
 
 def main() -> int:

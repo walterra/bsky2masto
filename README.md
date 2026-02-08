@@ -2,57 +2,65 @@
 
 Find followable Mastodon/Fediverse accounts from the people you follow on Bluesky, then generate a Mastodon import CSV.
 
-## Features
+## What it does
 
-- Fetches accounts followed by a Bluesky actor (`public.api.bsky.app`)
-- Extracts possible Fediverse handles from bio/display name text
-- Optional Bridgy-fed discovery (`@handle@bsky.brid.gy`)
-- Optional WebFinger verification of discovered handles
-- Exports CSV in Mastodon "Following list" import format
+Given a Bluesky account, `bsky2masto`:
 
-## Install (uv-first)
+1. Fetches followed accounts via the public Bluesky API
+2. Extracts possible Fediverse handles from bios/display names
+3. Optionally checks Bridgy Fed opt-in (`@handle@bsky.brid.gy`)
+4. Optionally verifies discovered handles with WebFinger
+5. Writes:
+   - `mastodon-import.csv` (Mastodon "Following list" import format)
+   - `matches.csv` (detailed match diagnostics)
+
+## Installation
+
+### Recommended (end users): pipx
+
+```bash
+pipx install bsky2masto
+```
+
+> If the first PyPI release is not live yet, use the "From source" section below.
+
+### One-shot usage: uvx
+
+```bash
+uvx bsky2masto --actor your-handle.bsky.social --include-bridgy
+```
+
+### Standard pip
+
+```bash
+python -m pip install bsky2masto
+```
+
+### From source (development)
 
 ```bash
 uv sync --group dev
-```
-
-Run the CLI with uv:
-
-```bash
 uv run bsky2masto --actor your-handle.bsky.social --include-bridgy
 ```
 
-Optional (non-uv) install:
+## Quickstart
 
 ```bash
-python3 -m pip install .
-```
-
-`uv.lock` is committed for reproducible environments.
-
-## Usage
-
-```bash
-uv run bsky2masto \
+bsky2masto \
   --actor your-handle.bsky.social \
   --output mastodon-import.csv \
   --matches-output matches.csv \
   --include-bridgy
 ```
 
-You can also run directly from source:
+Useful flags:
 
-```bash
-uv run python -m bsky2masto --actor your-handle.bsky.social --include-bridgy
-```
-
-### Useful flags
-
-- `--verify` → verify extracted handles via WebFinger
-- `--max-follows N` → scan only first `N` follows
-- `--scan-workers 8` → parallel workers for verify/bridgy checks (queue-based)
-- `--bridgy-pause-ms 150` → per-check pause before Bridgy request (politeness throttle)
-- `--quiet` → suppress progress logging
+- `--verify` → verify discovered handles via WebFinger
+- `--max-follows N` → scan only first `N` follows (faster testing)
+- `--scan-workers N` → worker count for verify/bridgy checks (default: `8`)
+- `--bridgy-pause-ms N` → per-check Bridgy pause (default: `150`)
+- `--quiet` → suppress progress logs
+- `--version` → print CLI version
 
 ## Import into Mastodon
 
@@ -61,20 +69,30 @@ uv run python -m bsky2masto --actor your-handle.bsky.social --include-bridgy
 3. Data type: **Following list**
 4. Upload `mastodon-import.csv`
 
-## Project layout
+## Exit codes
 
-- `src/bsky2masto/` → installable package
-- `tests/` → pytest suite
+- `0` success
+- `1` network/HTTP/unexpected runtime error
+- `2` CLI usage error (argparse)
+
+## Limitations and expectations
+
+- Best-effort parsing: false positives are possible.
+- Always inspect `matches.csv` before importing.
+- `--verify` and Bridgy checks perform additional network requests and may be slower.
+- Some profile strings (emails, non-Mastodon `@` patterns) can still look handle-like.
 
 ## Development
 
 ```bash
 uv sync --group dev
-uv run pytest
 uv run ruff check .
+uv run pytest -q
+uv build
 ```
 
-## Notes
+Supported Python versions: 3.10+
 
-- X/Twitter migration tools largely broke due to API restrictions.
-- This tool is best-effort parsing. Review `matches.csv` before import.
+## Security
+
+For vulnerability reports, see [SECURITY.md](SECURITY.md).
