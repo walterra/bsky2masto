@@ -1,32 +1,11 @@
-#!/usr/bin/env python3
-"""
-Build a Mastodon import CSV from the people a Bluesky account follows.
-
-What it does:
-1) Fetches accounts followed by a Bluesky actor (public API).
-2) Extracts possible Mastodon/Fediverse handles from profile text.
-3) Optionally checks if each Bluesky account is bridged via Bridgy Fed.
-4) Writes a Mastodon-compatible CSV that you can import as "Following list".
-
-Example:
-  python3 scripts/bluesky_to_mastodon_import.py \
-    --actor your-handle.bsky.social \
-    --output mastodon-import.csv \
-    --matches-output matches.csv \
-    --include-bridgy
-"""
-
 from __future__ import annotations
 
-import argparse
 import csv
 import json
 import re
-import sys
 import time
 from dataclasses import dataclass
 from typing import Dict, Iterable, List, Optional, Set, Tuple
-from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
@@ -63,7 +42,7 @@ def http_json(url: str, timeout: int = DEFAULT_TIMEOUT) -> dict:
     req = Request(
         url,
         headers={
-            "User-Agent": "bsky-to-mastodon-import/1.0",
+            "User-Agent": "bsky2masto/0.1.0",
             "Accept": "application/json, application/jrd+json;q=0.9, */*;q=0.1",
         },
     )
@@ -77,7 +56,9 @@ def bsky_get(endpoint: str, params: Dict[str, str]) -> dict:
     return http_json(url)
 
 
-def fetch_follows(actor: str, max_follows: Optional[int] = None, verbose: bool = True) -> List[dict]:
+def fetch_follows(
+    actor: str, max_follows: Optional[int] = None, verbose: bool = True
+) -> List[dict]:
     follows: List[dict] = []
     cursor: Optional[str] = None
     page = 0
@@ -108,7 +89,7 @@ def fetch_follows(actor: str, max_follows: Optional[int] = None, verbose: bool =
 
 
 def normalize_handle(raw: str) -> Optional[str]:
-    h = raw.strip().strip("\"'()[]{}<>,.;:!?")
+    h = raw.strip().strip('"\'()[]{}<>,.;:!?')
     if h.startswith("@"):
         h = h[1:]
 
@@ -172,9 +153,6 @@ def verify_mastodon_handle(handle: str, timeout: int = DEFAULT_TIMEOUT) -> bool:
 
 
 def write_mastodon_import_csv(path: str, handles: Iterable[str]) -> None:
-    # Format Mastodon accepts for Following import.
-    # Columns used by Mastodon export/import:
-    # Account address,Show boosts,Notify on new posts,Languages
     rows = sorted(set(handles))
     with open(path, "w", newline="", encoding="utf-8") as f:
         w = csv.writer(f)
@@ -234,7 +212,6 @@ def build_matches(
 
         seen_for_profile: Set[str] = set()
 
-        # Extract explicit handles from description + display name.
         for candidate, source in extract_candidates(description) + extract_candidates(display_name):
             if candidate in seen_for_profile:
                 continue
@@ -257,7 +234,6 @@ def build_matches(
                 )
             )
 
-        # Optional: include bridged Bluesky accounts as followable Mastodon handles.
         if include_bridgy and bsky_handle:
             if is_bridged_to_fediverse(bsky_handle):
                 bridgy_handle = f"{bsky_handle}@bsky.brid.gy"
@@ -274,91 +250,3 @@ def build_matches(
                 time.sleep(bridgy_pause_ms / 1000.0)
 
     return matches, len(follows)
-
-
-def parse_args() -> argparse.Namespace:
-    p = argparse.ArgumentParser(
-        description="Generate a Mastodon import CSV from Bluesky follows",
-    )
-    p.add_argument("--actor", required=True, help="Bluesky handle or DID")
-    p.add_argument(
-        "--output",
-        default="mastodon-import.csv",
-        help="Output Mastodon import CSV path (default: mastodon-import.csv)",
-    )
-    p.add_argument(
-        "--matches-output",
-        default="matches.csv",
-        help="Detailed match CSV path (default: matches.csv)",
-    )
-    p.add_argument(
-        "--max-follows",
-        type=int,
-        default=None,
-        help="Max follows to scan (for testing)",
-    )
-    p.add_argument(
-        "--include-bridgy",
-        action="store_true",
-        help="Also include bridged Bluesky accounts as @handle@bsky.brid.gy",
-    )
-    p.add_argument(
-        "--verify",
-        action="store_true",
-        help="Verify extracted Mastodon handles via WebFinger",
-    )
-    p.add_argument(
-        "--bridgy-pause-ms",
-        type=int,
-        default=150,
-        help="Pause between Bridgy checks to be polite (default: 150)",
-    )
-    p.add_argument(
-        "--quiet",
-        action="store_true",
-        help="Suppress progress logging",
-    )
-    return p.parse_args()
-
-
-def main() -> int:
-    args = parse_args()
-    verbose = not args.quiet
-
-    try:
-        matches, scanned = build_matches(
-            actor=args.actor,
-            max_follows=args.max_follows,
-            include_bridgy=args.include_bridgy,
-            verify=args.verify,
-            bridgy_pause_ms=args.bridgy_pause_ms,
-            verbose=verbose,
-        )
-    except HTTPError as e:
-        print(f"HTTP error: {e.code} {e.reason}", file=sys.stderr)
-        return 1
-    except URLError as e:
-        print(f"Network error: {e}", file=sys.stderr)
-        return 1
-    except Exception as e:
-        print(f"Unexpected error: {e}", file=sys.stderr)
-        return 1
-
-    handles = [m.mastodon_handle for m in matches if m.verified != "no"]
-
-    log("[3/3] Writing CSV files...", verbose)
-    write_mastodon_import_csv(args.output, handles)
-    write_matches_csv(args.matches_output, matches)
-
-    unique_handles = len(set(handles))
-    print(f"Scanned follows: {scanned}")
-    print(f"Matches found: {len(matches)}")
-    print(f"Unique importable handles: {unique_handles}")
-    print(f"Wrote Mastodon import CSV: {args.output}")
-    print(f"Wrote detailed matches CSV: {args.matches_output}")
-
-    return 0
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())

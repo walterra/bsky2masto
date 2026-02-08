@@ -1,6 +1,14 @@
 # Python
 __pycache__/
 *.pyc
+.venv/
+.pytest_cache/
+.ruff_cache/
+
+# Packaging artifacts
+build/
+dist/
+*.egg-info/
 
 # Generated outputs (local/social graph data)
 *-mastodon-import.csv
