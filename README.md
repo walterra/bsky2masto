@@ -10,40 +10,40 @@ Find followable Mastodon/Fediverse accounts from the people you follow on Bluesk
 - Optional WebFinger verification of discovered handles
 - Exports CSV in Mastodon "Following list" import format
 
-## Install
+## Install (uv-first)
 
-### Option A: install as a CLI
+```bash
+uv sync --group dev
+```
+
+Run the CLI with uv:
+
+```bash
+uv run bsky2masto --actor your-handle.bsky.social --include-bridgy
+```
+
+Optional (non-uv) install:
 
 ```bash
 python3 -m pip install .
 ```
 
-Then run:
-
-```bash
-bsky2masto --actor your-handle.bsky.social --include-bridgy
-```
-
-### Option B: developer mode
-
-```bash
-python3 -m pip install -e '.[dev]'
-```
+`uv.lock` is committed for reproducible environments.
 
 ## Usage
 
 ```bash
-bsky2masto \
+uv run bsky2masto \
   --actor your-handle.bsky.social \
   --output mastodon-import.csv \
   --matches-output matches.csv \
   --include-bridgy
 ```
 
-You can also run directly from source (without console-script install):
+You can also run directly from source:
 
 ```bash
-python3 -m bsky2masto --actor your-handle.bsky.social --include-bridgy
+uv run python -m bsky2masto --actor your-handle.bsky.social --include-bridgy
 ```
 
 ### Useful flags
@@ -68,9 +68,9 @@ python3 -m bsky2masto --actor your-handle.bsky.social --include-bridgy
 ## Development
 
 ```bash
-python3 -m pip install -e '.[dev]'
-pytest
-ruff check .
+uv sync --group dev
+uv run pytest
+uv run ruff check .
 ```
 
 ## Notes
